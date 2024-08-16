@@ -8,7 +8,7 @@ from tensorflow import keras
 place = pd.read_csv('clean_depok.csv')
 ur = pd.read_csv('user_ratings.csv')
 
-# Encoding User_Id dan Place_Id
+# Encoding User_ID dan Place_ID ke bentuk numerik
 user_ids = ur['user_id'].unique().tolist()
 user_to_user_encoded = {x: i for i, x in enumerate(user_ids)}
 user_encoded_to_user = {i: x for i, x in enumerate(user_ids)}
@@ -17,69 +17,58 @@ place_ids = ur['int_place_id'].unique().tolist()
 place_to_place_encoded = {x: i for i, x in enumerate(place_ids)}
 place_encoded_to_place = {i: x for i, x in enumerate(place_ids)}
 
+# Menambahkan kolom encoded ke dataframe user ratings
 ur['user'] = ur['user_id'].map(user_to_user_encoded)
 ur['place'] = ur['int_place_id'].map(place_to_place_encoded)
 ur['rating'] = ur['rating'].values.astype(np.float32)
 
-# Mendapatkan jumlah user
+# Mendapatkan jumlah user dan tempat
 num_users = len(user_to_user_encoded)
-
-# Mendapatkan jumlah place
 num_place = len(place_encoded_to_place)
 
-# Mengubah rating menjadi nilai float
-ur['rating'] = ur['rating'].values.astype(np.float32)
-
-# Nilai minimum rating
+# Mendapatkan nilai minimum dan maksimum rating
 min_rating = min(ur['rating'])
-
-# Nilai maksimal rating
 max_rating = max(ur['rating'])
 
-# Load the model
+# Definisi Model Rekomendasi
 class Recommenders(tf.keras.Model):
-  def __init__(self, num_users, num_place, embedding_size, **kwargs):
-    super(Recommenders, self).__init__(**kwargs)
-    self.num_users = num_users
-    self.num_place = num_place
-    self.embedding_size = embedding_size
-    self.user_embedding = tf.keras.layers.Embedding(
-        num_users,
-        embedding_size,
-        embeddings_initializer='he_normal',
-        embeddings_regularizer=keras.regularizers.l2(1e-6)
-    )
-    self.user_bias = tf.keras.layers.Embedding(num_users, 1)
-    self.place_embedding = tf.keras.layers.Embedding(
-        num_place,
-        embedding_size,
-        embeddings_initializer='he_normal',
-        embeddings_regularizer=keras.regularizers.l2(1e-6)
-    )
-    self.place_bias = tf.keras.layers.Embedding(num_place, 1)
+    def __init__(self, num_users, num_place, embedding_size, **kwargs):
+        super(Recommenders, self).__init__(**kwargs)
+        self.user_embedding = tf.keras.layers.Embedding(
+            num_users, embedding_size,
+            embeddings_initializer='he_normal',
+            embeddings_regularizer=keras.regularizers.l2(1e-6)
+        )
+        self.user_bias = tf.keras.layers.Embedding(num_users, 1)
+        self.place_embedding = tf.keras.layers.Embedding(
+            num_place, embedding_size,
+            embeddings_initializer='he_normal',
+            embeddings_regularizer=keras.regularizers.l2(1e-6)
+        )
+        self.place_bias = tf.keras.layers.Embedding(num_place, 1)
 
-  def call(self, inputs):
-    user_vector = self.user_embedding(inputs[:, 0])
-    user_bias = self.user_bias(inputs[:, 0])
-    place_vector = self.place_embedding(inputs[:, 1])
-    place_bias = self.place_bias(inputs[:, 1])
-    dot_user_place = tf.tensordot(user_vector, place_vector, 2)
-    x = dot_user_place + user_bias + place_bias
-    return tf.nn.sigmoid(x)
+    def call(self, inputs):
+        user_vector = self.user_embedding(inputs[:, 0])
+        user_bias = self.user_bias(inputs[:, 0])
+        place_vector = self.place_embedding(inputs[:, 1])
+        place_bias = self.place_bias(inputs[:, 1])
+        dot_user_place = tf.tensordot(user_vector, place_vector, 2)
+        x = dot_user_place + user_bias + place_bias
+        return tf.nn.sigmoid(x)
 
+# Inisialisasi dan Load Model
 model = Recommenders(num_users, num_place, 50)
 model.compile(
     loss=tf.keras.losses.BinaryCrossentropy(),
     optimizer=keras.optimizers.Adam(learning_rate=0.001),
     metrics=[tf.keras.metrics.RootMeanSquaredError()]
 )
-
 model.load_weights('recommender.weights.h5')
 
-# Streamlit app title
+# Streamlit App
 st.title('Rekomendasi Tempat Wisata di Depok')
 
-# Input user_id
+# Input User ID
 st.header('Rekomendasi Berdasarkan User ID')
 user_id_input = st.number_input("Masukkan User ID:", min_value=0, max_value=len(user_ids)-1, step=1)
 
@@ -109,7 +98,7 @@ if st.button('Tampilkan Rekomendasi Berdasarkan User ID'):
     else:
         st.write("Tidak ada rekomendasi tempat yang tersedia.")
 
-# Input kategori
+# Input Kategori
 st.header('Rekomendasi Berdasarkan Kategori')
 categories = place['category'].unique().tolist()
 desired_category = st.selectbox("Pilih Kategori:", categories)
@@ -127,7 +116,7 @@ if st.button('Tampilkan Rekomendasi Berdasarkan Kategori'):
         st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
         st.write("---")
 
-# Input tempat yang disukai
+# Input Tempat yang Disukai
 st.header('Rekomendasi Berdasarkan Tempat yang Disukai')
 liked_place_name = st.text_input("Masukkan nama tempat yang Anda sukai:")
 
