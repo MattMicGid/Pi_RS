@@ -68,90 +68,52 @@ model.load_weights('recommender.weights.h5')
 # Streamlit App
 st.title('Rekomendasi Tempat Wisata di Depok')
 
-# Input User ID
-st.header('Rekomendasi Berdasarkan User ID')
-user_id_input = st.number_input("Masukkan User ID:", min_value=0, max_value=len(user_ids)-1, step=1)
+# Display a scrollable box with a list of places
+place_names = sorted(place['name'].tolist())
+selected_place = st.selectbox("Daftar Tempat Wisata:", place_names)
 
-if st.button('Tampilkan Rekomendasi Berdasarkan User ID'):
-    user_id = user_id_input
-    place_have_not_visit = ur[ur.user_id == user_id]
-    place_have_not_visit = place[place['int_place_id'].isin(place_have_not_visit.int_place_id.values)]['int_place_id']
-    place_have_not_visit = list(set(place_have_not_visit).intersection(set(place_to_place_encoded.keys())))
-
-    if len(place_have_not_visit) > 0:
-        place_have_not_visit = [[place_to_place_encoded.get(x)] for x in place_have_not_visit]
-        user_encoder = user_to_user_encoded.get(user_id)
-        user_place_array = np.hstack(([[user_encoder]] * len(place_have_not_visit), place_have_not_visit))
-        ratings = model.predict(user_place_array).flatten()
-
-        top_ratings_indices = ratings.argsort()[-5:][::-1]
-        recommended_place_ids = [place_encoded_to_place.get(place_have_not_visit[x][0]) for x in top_ratings_indices]
-        recommended_place = place[place['int_place_id'].isin(recommended_place_ids)]
-
-        st.write('Top 5 Tempat Rekomendasi:')
-        for row in recommended_place.itertuples():
-            st.write(f"**Nama Tempat**: {row.name}")
-            st.write(f"**Alamat**: {row.formatted_address}")
-            st.write(f"**Rating**: {row.rating} | **Jumlah Pemberi Rating**: {row.user_ratings_total}")
-            st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
-            st.write("---")
-    else:
-        st.write("Tidak ada rekomendasi tempat yang tersedia.")
-
-# Input Kategori
-st.header('Rekomendasi Berdasarkan Kategori')
-categories = place['category'].unique().tolist()
-desired_category = st.selectbox("Pilih Kategori:", categories)
-
-if st.button('Tampilkan Rekomendasi Berdasarkan Kategori'):
-    filtered_places = place[place['category'] == desired_category]
-    sorted_filtered_places = filtered_places.sort_values(by=['user_ratings_total', 'rating'], ascending=[False, False])
-    top_5_places = sorted_filtered_places.head(5)
-
-    st.write(f"Top 5 Tempat Rekomendasi di Kategori: {desired_category}")
-    for row in top_5_places.itertuples():
-        st.write(f"**Nama Tempat**: {row.name}")
-        st.write(f"**Alamat**: {row.formatted_address}")
-        st.write(f"**Rating**: {row.rating} | **Jumlah Pemberi Rating**: {row.user_ratings_total}")
-        st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
-        st.write("---")
+# Display the details of the selected place
+if selected_place:
+    place_details = place[place['name'] == selected_place].iloc[0]
+    st.write(f"**Nama Tempat**: {place_details['name']}")
+    st.write(f"**Alamat**: {place_details['formatted_address']}")
+    st.write(f"**Rating**: {place_details['rating']} | **Jumlah Pemberi Rating**: {place_details['user_ratings_total']}")
+    st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{place_details['place_id']})")
 
 # Input Tempat yang Disukai
 st.header('Rekomendasi Berdasarkan Tempat yang Disukai')
 liked_place_name = st.text_input("Masukkan nama tempat yang Anda sukai:")
 
+# Modifikasi Rekomendasi Berdasarkan Tempat yang Disukai menggunakan Embedding
 if st.button('Tampilkan Rekomendasi Berdasarkan Tempat yang Disukai'):
     liked_place_row = place[place['name'].str.contains(liked_place_name, case=False, na=False)]
     if liked_place_row.empty:
         st.write(f"Tempat dengan nama '{liked_place_name}' tidak ditemukan.")
     else:
         liked_place_id = liked_place_row['int_place_id'].values[0]
-        similar_users = ur[(ur['int_place_id'] == liked_place_id) & (ur['rating'] >= 4.0)]['user_id'].unique()
-
-        if len(similar_users) == 0:
-            st.write("Tidak ada pengguna lain yang memberikan rating tinggi untuk tempat ini.")
+        
+        # Ambil vektor embedding untuk tempat yang disukai
+        liked_place_encoded = place_to_place_encoded[liked_place_id]
+        liked_place_embedding = model.place_embedding(np.array([liked_place_encoded]))
+        
+        # Hitung kemiripan (dot product) antara tempat yang disukai dan semua tempat lainnya
+        all_place_embeddings = model.place_embedding.embeddings.numpy()
+        similarity_scores = np.dot(all_place_embeddings, liked_place_embedding.numpy().T).flatten()
+        
+        # Ambil tempat dengan skor tertinggi selain tempat yang disukai
+        similar_place_indices = similarity_scores.argsort()[-6:][::-1]  # Top 5
+        similar_place_ids = [place_encoded_to_place[i] for i in similar_place_indices if i != liked_place_encoded]
+        recommended_places = place[place['int_place_id'].isin(similar_place_ids)]
+        
+        if not recommended_places.empty:
+            st.write(f"Top 5 tempat rekomendasi berdasarkan '{liked_place_name}'")
+            for row in recommended_places.itertuples():
+                st.write(f"**Nama Tempat**: {row.name}")
+                st.write(f"**Alamat**: {row.formatted_address}")
+                st.write(f"**Rating**: {row.rating} | **Jumlah Pemberi Rating**: {row.user_ratings_total}")
+                st.write(f"**Category**: {row.category}")
+                st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
+                st.write("---")
         else:
-            similar_places = ur[(ur['user_id'].isin(similar_users)) & (ur['int_place_id'] != liked_place_id)]
-            if similar_places.empty:
-                st.write("Tidak ada rekomendasi tempat lain yang mirip.")
-            else:
-                recommended_place_ids = similar_places['int_place_id'].unique()
-                place_have_not_visit = [[place_to_place_encoded.get(x)] for x in recommended_place_ids]
-                user_encoder = user_to_user_encoded.get(user_id_input)
-                user_place_array = np.hstack(([[user_encoder]] * len(place_have_not_visit), place_have_not_visit))
-                ratings = model.predict(user_place_array).flatten()
-                top_ratings_indices = ratings.argsort()[-5:][::-1]
-                final_recommendations = [place_encoded_to_place.get(place_have_not_visit[x][0]) for x in top_ratings_indices]
-                final_recommendations = [x for x in final_recommendations if x != liked_place_id]
+            st.write("Tidak ada tempat rekomendasi yang tersedia.")
 
-                if len(final_recommendations) > 0:
-                    recommended_place = place[place['int_place_id'].isin(final_recommendations)]
-                    st.write('Top 5 tempat rekomendasi berdasarkan tempat yang disukai:')
-                    for row in recommended_place.itertuples():
-                        st.write(f"**Nama Tempat**: {row.name}")
-                        st.write(f"**Alamat**: {row.formatted_address}")
-                        st.write(f"**Rating**: {row.rating} | **Jumlah Pemberi Rating**: {row.user_ratings_total}")
-                        st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
-                        st.write("---")
-                else:
-                    st.write("Tidak ada tempat rekomendasi yang tersedia.")
