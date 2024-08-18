@@ -117,3 +117,16 @@ if st.button('Tampilkan Rekomendasi Berdasarkan Tempat yang Disukai'):
         else:
             st.write("Tidak ada tempat rekomendasi yang tersedia.")
 
+#Rekomendasi Tempat untuk Pengguna Baru
+st.header('Rekomendasi Tempat untuk Pengguna Baru')
+if st.button('Tampilkan Saran Tempat'):
+    top_places = place.sort_values(by='user_ratings_total', ascending=False).head(5)
+    
+    st.write("Top 5 tempat rekomendasi untuk pengguna baru berdasarkan jumlah pemberi rating:")
+    for row in top_places.itertuples():
+        st.write(f"**Nama Tempat**: {row.name}")
+        st.write(f"**Alamat**: {row.formatted_address}")
+        st.write(f"**Rating**: {row.rating} | **Jumlah Pemberi Rating**: {row.user_ratings_total}")
+        st.write(f"**Category**: {row.category}")
+        st.write(f"[Link Google Maps](https://www.google.com/maps/place/?q=place_id:{row.place_id})")
+        st.write("---")
