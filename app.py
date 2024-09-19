@@ -82,31 +82,40 @@ if selected_place:
 
 # Input Tempat yang Disukai
 st.header('Rekomendasi Berdasarkan Tempat yang Disukai')
-liked_place_name = st.text_input("Masukkan nama tempat yang Anda sukai:")
+liked_place_names = st.text_input("Masukkan nama tempat yang Anda sukai (pisahkan dengan koma):")
 
-# Modifikasi Rekomendasi Berdasarkan Tempat yang Disukai menggunakan Embedding
+# Modifikasi Rekomendasi Berdasarkan Tempat yang Disukai menggunakan beberapa tempat
 if st.button('Tampilkan Rekomendasi Berdasarkan Tempat yang Disukai'):
-    liked_place_row = place[place['name'].str.contains(liked_place_name, case=False, na=False)]
-    if liked_place_row.empty:
-        st.write(f"Tempat dengan nama '{liked_place_name}' tidak ditemukan.")
-    else:
-        liked_place_id = liked_place_row['int_place_id'].values[0]
+    liked_place_list = [name.strip() for name in liked_place_names.split(',')]  # Ambil tempat yang diinput
+    
+    liked_place_embeddings = []
+    
+    # Ambil embedding untuk setiap tempat yang diinput
+    for liked_place_name in liked_place_list:
+        liked_place_row = place[place['name'].str.contains(liked_place_name, case=False, na=False)]
+        if liked_place_row.empty:
+            st.write(f"Tempat dengan nama '{liked_place_name}' tidak ditemukan.")
+        else:
+            liked_place_id = liked_place_row['int_place_id'].values[0]
+            liked_place_encoded = place_to_place_encoded[liked_place_id]
+            liked_place_embedding = model.place_embedding(np.array([liked_place_encoded]))
+            liked_place_embeddings.append(liked_place_embedding)
+    
+    if liked_place_embeddings:
+        # Hitung rata-rata embedding dari tempat yang diinput
+        avg_embedding = np.mean([embed.numpy() for embed in liked_place_embeddings], axis=0)
         
-        # Ambil vektor embedding untuk tempat yang disukai
-        liked_place_encoded = place_to_place_encoded[liked_place_id]
-        liked_place_embedding = model.place_embedding(np.array([liked_place_encoded]))
-        
-        # Hitung kemiripan (dot product) antara tempat yang disukai dan semua tempat lainnya
+        # Hitung kemiripan (dot product) antara embedding rata-rata dan semua tempat lainnya
         all_place_embeddings = model.place_embedding.embeddings.numpy()
-        similarity_scores = np.dot(all_place_embeddings, liked_place_embedding.numpy().T).flatten()
+        similarity_scores = np.dot(all_place_embeddings, avg_embedding.T).flatten()
         
         # Ambil tempat dengan skor tertinggi selain tempat yang disukai
         similar_place_indices = similarity_scores.argsort()[-6:][::-1]  # Top 5
-        similar_place_ids = [place_encoded_to_place[i] for i in similar_place_indices if i != liked_place_encoded]
+        similar_place_ids = [place_encoded_to_place[i] for i in similar_place_indices]
         recommended_places = place[place['int_place_id'].isin(similar_place_ids)]
         
         if not recommended_places.empty:
-            st.write(f"Top 5 tempat rekomendasi berdasarkan '{liked_place_name}'")
+            st.write(f"Top 5 tempat rekomendasi berdasarkan tempat yang Anda sukai: {', '.join(liked_place_list)}")
             for row in recommended_places.itertuples():
                 st.write(f"**Nama Tempat**: {row.name}")
                 st.write(f"**Alamat**: {row.formatted_address}")
@@ -117,7 +126,7 @@ if st.button('Tampilkan Rekomendasi Berdasarkan Tempat yang Disukai'):
         else:
             st.write("Tidak ada tempat rekomendasi yang tersedia.")
 
-#Rekomendasi Tempat untuk Pengguna Baru
+# Rekomendasi Tempat untuk Pengguna Baru
 st.header('Rekomendasi Tempat untuk Pengguna Baru')
 if st.button('Tampilkan Saran Tempat'):
     top_places = place.sort_values(by='user_ratings_total', ascending=False).head(5)
